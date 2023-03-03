@@ -1,0 +1,37 @@
+.tree {
+  border: 1px solid #000;
+}
+
+.tree_wrapper {
+  padding-left: 8px;
+}
+
+.node_container {
+}
+
+.selected {
+  background: white;
+}
+
+.parent_dropspot {
+  outline: 1px solid blue;
+}
+
+.node_content {
+  padding: 8px;
+  border: 1px solid #444;
+  user-select: none;
+}
+
+.dropspot_wrapper {
+  height: 0;
+  z-index: 1;
+  background: yellow;
+}
+
+.dropspot {
+  height: 4px;
+  background: blue;
+  z-index: 10;
+  transform: translateY(-50%);
+}
