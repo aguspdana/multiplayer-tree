@@ -1,5 +1,3 @@
-"use client";
-
 import React, { ReactNode, useCallback, useEffect, useRef, useState } from "react";
 import styles from "./Tree.module.css";
 
@@ -125,23 +123,7 @@ function TreeNode<T extends MinimalTreeNode<T>>({
     e.stopPropagation();
   }
 
-  function handleMouseEnter(e: React.MouseEvent<HTMLDivElement>) {
-    if (isDragged && ref.current) {
-      e.stopPropagation();
-      const y = e.clientY - ref.current.offsetTop;
-      const height = ref.current.offsetHeight;
-      if (y < height / 2) {
-        setDropPath([...path]);
-      } else {
-        const newDropPath = [...path];
-        newDropPath[newDropPath.length - 1] += 1;
-        setDropPath(newDropPath);
-      }
-    }
-  }
-
-  // TODO: handleMouseEnter and handleMouseMove are basically the same.
-  function handleMouseMove(e: React.MouseEvent<HTMLDivElement>) {
+  function handleMouseEnterMove(e: React.MouseEvent<HTMLDivElement>) {
     if (isDragged && ref.current) {
       e.stopPropagation();
       const y = e.clientY - ref.current.offsetTop;
@@ -195,8 +177,8 @@ function TreeNode<T extends MinimalTreeNode<T>>({
       ref={ref}
       className={cotainerClass}
       onMouseDown={handleMouseDown}
-      onMouseEnter={handleMouseEnter}
-      onMouseMove={handleMouseMove}
+      onMouseEnter={handleMouseEnterMove}
+      onMouseMove={handleMouseEnterMove}
     >
 
       {dropspot === "above" && (
@@ -665,9 +647,7 @@ export function RootTree<T extends MinimalTreeNode<T>>({
     } else if (typeof setTree === "function") {
       if (!selection) return;
 
-      console.log("move selection", selection);
       const paths: (TreePath | undefined)[] = selectionToPaths(selection);
-      console.log("move paths", paths);
       let newTree = tree;
 
       for (let i = 0; i < paths.length; i++) {
@@ -675,7 +655,7 @@ export function RootTree<T extends MinimalTreeNode<T>>({
         if (!path_i) continue;
 
         const to_i = [...dropPath];
-        to_i[i] += i;
+        to_i[to_i.length - 1] += i;
 
         const transformedTree = transformMoveTree(newTree, path_i, to_i);
 
@@ -918,19 +898,19 @@ function transformMovePath(
   // `from` and `to` is pointing to the same doc version.  We have to
   // transform (delete) `to` into `insertAt` so the insert operation points to
   // a doc that has been applied the delete operation.
-  const insertAt = transformDeletePath(to, PathType.Anchor, from);
+  const insertPathAfterDelete = transformDeletePath(to, PathType.Anchor, from);
 
-  if (!insertAt) {
+  if (!insertPathAfterDelete) {
     return path;
   }
 
-  const pathTranDel = transformDeletePath(path, pathType, from);
+  const pathAfterDelete = transformDeletePath(path, pathType, from);
 
-  if (!pathTranDel) {
-    return to;
+  if (!pathAfterDelete) {
+    return [...to, ...path.slice(from.length)];
   }
 
-  return transformInsertPath(pathTranDel, pathType, insertAt);
+  return transformInsertPath(pathAfterDelete, pathType, insertPathAfterDelete);
 }
 
 function transformInsertSelection(selection: Selection, at: TreePath) {
@@ -956,6 +936,7 @@ function transformDeleteSelection(selection: Selection, at: TreePath) {
 function transformMoveSelection(selection: Selection, from: TreePath, to: TreePath) {
   const transformedPaths = selectionToPaths(selection)
     .map(path => transformMovePath(path, PathType.Exact, from, to));
+
   const transformedSelection = pathsToSelection(transformedPaths);
   return transformedSelection;
 }
@@ -1050,16 +1031,29 @@ function selectionToPaths(selection: Selection) {
 
 function pathsToSelection(paths: TreePath[]) {
   let newSelection: Selection = {};
+
   for (const path of paths) {
     let subSelection = newSelection;
-    for (const index of path) {
-      if (subSelection[index]) {
+
+    for (let i = 0; i < path.length; i++) {
+      const index = path[i];
+      const isSelected = typeof subSelection[index] === "object"
+        && Object.keys(subSelection[index]).length === 0;
+
+      if (isSelected) {
+        // The current node is selected.
+        // Its decendants can't be selected.
         break;
       }
-      subSelection[index] = {};
+
+      if (typeof subSelection[index] === "undefined" || i === path.length - 1) {
+        subSelection[index] = {};
+      }
+
       subSelection = subSelection[index];
     }
   }
+
   return newSelection;
 }
 

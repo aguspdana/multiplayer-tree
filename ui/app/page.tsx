@@ -1,4 +1,4 @@
-import { TreeExample } from "lib/TreeExample";
+import { TreeExample } from "lib/components/TreeExample";
 import styles from './page.module.css'
 
 export default function Home() {
