@@ -1,0 +1,5 @@
+{
+  "name": "multiplayer-tree",
+  "build": "npm run build --workspaces --if-present && npm run test && rm -rf dist && npm run lint && tsc -b",
+  "workspaces": ["packages/*", "apps/*"]
+}

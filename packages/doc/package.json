@@ -1,0 +1,17 @@
+{
+  "name": "doc",
+  "version": "1.0.0",
+  "description": "",
+  "module": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "rm -rf dist && tsc index.ts --declaration --allowJs --outDir dist"
+  },
+  "private": true,
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "typescript": "^4.9.5"
+  }
+}
