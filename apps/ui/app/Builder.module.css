@@ -1,0 +1,9 @@
+.container {
+  width: 100%;
+  display: flex;
+}
+
+.sidebar {
+  width: 320px;
+  flex-grow: 0;
+}

@@ -1,62 +1,109 @@
-import { Doc, Element, DocType, Transaction, Operation } from "doc";
-import { Queue } from "./queue";
+import {
+  applyOperation,
+  cleanRebase,
+  Doc,
+  DocType,
+  Element,
+  Operation,
+} from "doc";
+
+export class DocsMap {
+  private docs: Record<string, ServerDoc>;
+
+  constructor() {
+    this.docs = {};
+  }
+
+  add(doc: ServerDoc) {
+    this.docs[doc.id] = doc;
+  }
+
+  delete(id: string) {
+    delete this.docs[id];
+  }
+
+  get(id: string): ServerDoc | undefined {
+     return this.docs[id];
+  }
+
+  get list() {
+    return Object.entries(this.docs)
+      .map(([_, doc]) => {
+        const { id, type, title } = doc.data;
+        return { id, type, title };
+      });
+  }
+}
 
 export class ServerDoc {
-  private id: string;
-  private type: DocType;
-  private title: string;
-  private content: Element[];
-  private version: number;
-  private operations: Operation[];
-  private clients: {
-    [id: string]: {
-      transactions: {
-        version: number,
-        transformed: Transaction[],
-      }[]
+  private _id: string;
+  private _type: DocType;
+  private _title: string;
+  private _children: Element[];
+  private _version: number;
+  private _operations: Operation[];
+
+  constructor(doc: Doc) {
+    this._id = doc.id;
+    this._type = doc.type;
+    this._title = doc.title;
+    this._children = doc.children;
+    this._version = 0;
+    // old to new
+    this._operations = [];
+  }
+
+  apply(version: number, ops: Operation[]): VersionedTransaction | null {
+    if (version > this._version || version < this._version - this._operations.length) {
+      return null;
     }
-  };
-  private queue: Queue<ClientTransaction>;
-  private broadcast: BroadcastFn;
 
-  constructor(doc: Doc, broadcast: BroadcastFn ) {
-    this.id = doc.id;
-    this.type = doc.type;
-    this.title = doc.title;
-    this.content = doc.content;
-    this.version = 0;
-    this.operations = [];
-    this.clients = {};
-    this.broadcast = broadcast;
-    this.queue = new Queue(this._apply);
-  }
+    const baseIndex = this._operations.length - (this._version - version);
+    const rebased = cleanRebase(ops, this._operations.slice(baseIndex));
 
-  apply(tr: ClientTransaction) {
-    this.queue.addJob(tr);
-  }
+    let children = this._children;
 
-  private _apply(tr: ClientTransaction) {
-    // TODO
-  }
+    const appliedOps: Operation[] = [];
+    for (const op of rebased) {
+      const res = applyOperation(children, op);
+      if (!res) {
+        continue;
+      }
+      children = res.tree;
+      appliedOps.push(op);
+    }
 
-  addClient(id: string) {
-    this.clients[id] = {
-      transactions: []
+    this._children = children;
+    this._version += appliedOps.length;
+    for (const op of appliedOps) {
+      this._operations.push(op);
+    }
+
+    return {
+      version: this._version,
+      operations: rebased,
     };
   }
 
-  removeClient(id: string) {
-    delete this.clients[id];
+  get data() {
+    return {
+      id: this._id,
+      type: this._type,
+      title: this._title,
+      children: this._children,
+    };
+  }
+
+  get id() {
+    return this._id;
+  }
+
+  get version() {
+    return this._version;
   }
 }
 
-type BroadcastFn = (job: RemoteTransaction) => void;
-
-interface RemoteTransaction {
+export interface VersionedTransaction {
   version: number,
-  transaction: Transaction
-}
-
-interface ClientTransaction extends RemoteTransaction {
-  clientId: string
+  operations: Operation[]
 }

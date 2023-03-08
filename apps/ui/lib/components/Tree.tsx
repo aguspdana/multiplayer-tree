@@ -91,7 +91,8 @@ function TreeNode<T extends MinimalTreeNode<T>>({
   selection
 }: TreeNodeProps<T>) {
   const [mouseDownAt, setMouseDownAt] = useState<{ x: number, y: number } | null>(null);
-  const ref = useRef<HTMLDivElement | null>(null);
+  const containerRef = useRef<HTMLDivElement | null>(null);
+  const contentRef = useRef<HTMLDivElement | null>(null);
 
   const selected = selection && Object.keys(selection).length == 0;
 
@@ -104,7 +105,8 @@ function TreeNode<T extends MinimalTreeNode<T>>({
     contentClass = contentClass + " " + styles.parent_dropspot;
   }
 
-  function handleMouseDown(e: React.MouseEvent<HTMLDivElement>) {
+  function mouseDownOnContainer(e: React.MouseEvent<HTMLDivElement>) {
+    e.stopPropagation();
     setMouseDownAt({
       x: e.screenX,
       y: e.screenY
@@ -120,16 +122,51 @@ function TreeNode<T extends MinimalTreeNode<T>>({
     } else if (!selected) {
       select(path);
     }
-    e.stopPropagation();
   }
 
-  function handleMouseEnterMove(e: React.MouseEvent<HTMLDivElement>) {
-    if (isDragged && ref.current) {
+  function clickOnContainer(e: React.MouseEvent) {
+    e.stopPropagation();
+    if (!e.shiftKey && !e.ctrlKey) {
+      select(path);
+    }
+  }
+
+  function mouseEnterMoveOnContainer(e: React.MouseEvent<HTMLDivElement>) {
+    if (isDragged && containerRef.current) {
       e.stopPropagation();
-      const y = e.clientY - ref.current.offsetTop;
-      const height = ref.current.offsetHeight;
+      const y = e.clientY - containerRef.current.offsetTop;
+      const height = containerRef.current.offsetHeight;
       if (y < height / 2) {
+          setDropPath([...path]);
+      } else {
+        const newDropPath = [...path];
+        newDropPath[newDropPath.length - 1] += 1;
+        setDropPath(newDropPath);
+      }
+    }
+  }
+
+  function handleMouseEnterMoveOnContent(e: React.MouseEvent<HTMLDivElement>) {
+    if (isDragged && contentRef.current) {
+      e.stopPropagation();
+      const y = e.clientY - contentRef.current.offsetTop;
+      const height = contentRef.current.offsetHeight;
+      if (node.children?.length === 0) {
+        if (y < height / 3) {
+          setDropPath([...path]);
+        } else if (y < height * 2 / 3) {
+          const newDropPath = [...path, 0];
+          setDropPath(newDropPath);
+        } else {
+          const newDropPath = [...path];
+          newDropPath[newDropPath.length - 1] += 1;
+          setDropPath(newDropPath);
+        }
+      } else if (y < height / 2) {
         setDropPath([...path]);
+      } else if (node.children && node.children.length > 0) {
+        const newDropPath = [...path, 0];
+        setDropPath(newDropPath);
       } else {
         const newDropPath = [...path];
         newDropPath[newDropPath.length - 1] += 1;
@@ -174,11 +211,12 @@ function TreeNode<T extends MinimalTreeNode<T>>({
 
   return (
     <div
-      ref={ref}
+      ref={containerRef}
       className={cotainerClass}
-      onMouseDown={handleMouseDown}
-      onMouseEnter={handleMouseEnterMove}
-      onMouseMove={handleMouseEnterMove}
+      onClick={clickOnContainer}
+      onMouseDown={mouseDownOnContainer}
+      onMouseEnter={mouseEnterMoveOnContainer}
+      onMouseMove={mouseEnterMoveOnContainer}
     >
 
       {dropspot === "above" && (
@@ -188,7 +226,10 @@ function TreeNode<T extends MinimalTreeNode<T>>({
       )}
 
       <div
+        ref={contentRef}
         className={contentClass}
+        onMouseEnter={handleMouseEnterMoveOnContent}
+        onMouseMove={handleMouseEnterMoveOnContent}
       >
         {component({
           path,
@@ -329,7 +370,12 @@ type RootTreeFromCommonProps<T extends MinimalTreeNode<T>> = Omit<
   | "onDrop"
   | "isDragged"
   | "setDropPath"
-  | "dropPath">;
+  | "dropPath"
+  | "select"
+  | "multiSelect"
+  | "selectRange"
+  | "unselect"
+>;
 type RootTreeExtends<T extends MinimalTreeNode<T>> = Optional<
   RootTreeFromCommonProps<T>,
   "insertNode"
@@ -342,10 +388,6 @@ type RootTreeExtends<T extends MinimalTreeNode<T>> = Optional<
   | "unwrap"
   | "fold"
   | "unfold"
-  | "select"
-  | "unselect"
-  | "multiSelect"
-  | "selectRange"
 >;
 
 interface RootTreeProps<T extends MinimalTreeNode<T>> extends RootTreeExtends<T> {
@@ -373,10 +415,6 @@ export function RootTree<T extends MinimalTreeNode<T>>({
   component,
   selection,
   setSelection,
-  select,
-  multiSelect,
-  selectRange,
-  unselect,
 }: RootTreeProps<T>) {
   const [isDragged, setIsDragged] = useState(false);
   const [dropPath, setDropPath] = useState<TreePath | null>(null);
@@ -543,9 +581,7 @@ export function RootTree<T extends MinimalTreeNode<T>>({
   }
 
   function _select(path: TreePath) {
-    if (typeof select === "function") {
-      select(path);
-    } else if (typeof setSelection === "function") {
+    if (typeof setSelection === "function") {
       let newSelection: Selection = {};
       for (let i = path.length - 1; i >= 0; i--) {
         newSelection = { [path[i]]: newSelection };
@@ -555,9 +591,7 @@ export function RootTree<T extends MinimalTreeNode<T>>({
   }
 
   function _multiSelect(path: TreePath) {
-    if (typeof multiSelect === "function") {
-      multiSelect(path);
-    } else if (typeof setSelection === "function") {
+    if (typeof setSelection === "function") {
       let newSelection = { ...selection };
       let subSelection = newSelection;
       for (let i = 0; i < path.length; i++) {
@@ -572,35 +606,60 @@ export function RootTree<T extends MinimalTreeNode<T>>({
     }
   }
 
-  function _selectRange(path: TreePath) {
-    if (typeof selectRange === "function") {
-      selectRange(path);
-    } else if (typeof setSelection === "function") {
+  function _selectRange(_: TreePath) {
+    if (typeof setSelection === "function") {
       // TODO
       console.log("TODO: selectRange");
     }
   }
 
   function _unselect(path: TreePath) {
-    if (typeof unselect === "function") {
-      unselect(path);
-    } else if (typeof setSelection === "function") {
-      let newSelection = { ...selection };
-      let subSelection = newSelection;
+    if (typeof setSelection === "function") {
+      let deleteAtDepth: number | null = null;
+      let shouldDelete = false;
 
-      for (let i = 0; i < path.length; i++) {
-        if (subSelection[path[i]] === undefined) return;
+      {
+        let subSelection = selection;
+        for (let i = 0; i < path.length; i++) {
+          const index = path[i];
 
-        if (i === path.length - 1) {
-          delete subSelection[path[i]];
-          break;
+          if (subSelection[index] === undefined) return;
+
+          const isLast = i === path.length - 1;
+          const length = Object.keys(subSelection[index]).length;
+
+          if (isLast && length === 0) {
+            shouldDelete = true;
+          }
+
+          if (length > 1) {
+            deleteAtDepth = null;
+          } else if (deleteAtDepth === null) {
+            deleteAtDepth = i + 1;
+          }
+
+          subSelection[index] = { ...subSelection[index] };
+          subSelection = subSelection[index];
         }
-
-        subSelection[path[i]] = { ...subSelection[path[i]] };
-        subSelection = subSelection[path[i]];
       }
 
-      setSelection(newSelection);
+      if (shouldDelete && deleteAtDepth !== null) {
+        let newSelection = { ...selection };
+        let subSelection = newSelection;
+        let deletePath = path.slice(0, deleteAtDepth);
+
+        for (let i = 0; i < deletePath.length; i++) {
+          const index = deletePath[i];
+          if (i === deletePath.length - 1) {
+            delete subSelection[index];
+            break;
+          }
+          subSelection[index] = { ...subSelection[index] };
+          subSelection = subSelection[index];
+        }
+
+        setSelection(newSelection);
+      }
     }
   }
 
@@ -682,10 +741,6 @@ export function RootTree<T extends MinimalTreeNode<T>>({
 
     setDropPath(null);
   }
-
-  useEffect(function () {
-    console.log("selection", selection);
-  }, [selection]);
 
   useEffect(() => {
     function handleKeyDown(e: KeyboardEvent) {
@@ -1022,14 +1077,14 @@ function selectionToPathsRecursive(anchestors: TreePath, selection: Selection): 
     .flat();
 }
 
-function selectionToPaths(selection: Selection) {
+export function selectionToPaths(selection: Selection) {
   if (Object.keys(selection).length === 0) {
     return [];
   }
   return selectionToPathsRecursive([], selection);
 }
 
-function pathsToSelection(paths: TreePath[]) {
+export function pathsToSelection(paths: TreePath[]) {
   let newSelection: Selection = {};
 
   for (const path of paths) {

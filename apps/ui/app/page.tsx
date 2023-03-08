@@ -1,10 +1,10 @@
 import styles from './page.module.css'
-import { Chat } from "./Chat";
+import { Builder } from "./Builder";
 
 export default function Home() {
   return (
     <main className={styles.main}>
-      <Chat/>
+      <Builder/>
     </main>
   )
 }

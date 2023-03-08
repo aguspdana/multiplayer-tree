@@ -7,8 +7,6 @@ export function Chat() {
   const [value, setValue] = useState();
 
   const socket = io("ws://localhost:3001");
-  //
-  // client-side
   socket.on("connect", () => {
     console.log(socket.id); // x8WIv7-mJelg7on_ALbx
   });

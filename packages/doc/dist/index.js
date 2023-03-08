@@ -20,7 +20,7 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
     return to.concat(ar || Array.prototype.slice.call(from));
 };
 exports.__esModule = true;
-exports.mapPathByTransformedOperation = exports.transformPathBeforeOperation = exports.transformPathAfterOperation = exports.applyOperation = exports.PathType = exports.OperationType = exports.LayoutDirection = exports.ElementType = exports.DocType = void 0;
+exports.mapPathByTransformedOperation = exports.transformPathBeforeOperation = exports.transformPathAfterOperation = exports.map = exports.transformBackward = exports.transformForward = exports.rebase = exports.cleanRebase = exports.applyOperation = exports.PathType = exports.OperationType = exports.LayoutDirection = exports.ElementType = exports.DocType = void 0;
 var DocType;
 (function (DocType) {
     DocType["Page"] = "page";
@@ -28,6 +28,7 @@ var DocType;
 })(DocType = exports.DocType || (exports.DocType = {}));
 var ElementType;
 (function (ElementType) {
+    ElementType["ComponentRef"] = "component_ref";
     ElementType["Layout"] = "layout";
     ElementType["Text"] = "text";
     ElementType["Input"] = "input";
@@ -50,52 +51,52 @@ var PathType;
     PathType[PathType["Exact"] = 0] = "Exact";
     PathType[PathType["Anchor"] = 1] = "Anchor";
 })(PathType = exports.PathType || (exports.PathType = {}));
-function applyOperation(content, operation) {
+function applyOperation(tree, operation) {
     switch (operation.type) {
         case OperationType.Insert:
-            return applyInsert(content, operation);
+            return applyInsert(tree, operation);
         case OperationType.Delete:
-            return applyDelete(content, operation);
+            return applyDelete(tree, operation);
         case OperationType.Move:
-            return applyMove(content, operation);
+            return applyMove(tree, operation);
         case OperationType.Set:
-            return applySet(content, operation);
+            return applySet(tree, operation);
     }
 }
 exports.applyOperation = applyOperation;
-function applyInsert(content, operation) {
-    var newContent = apply(content, operation.path, function (children, index) {
+function applyInsert(tree, operation) {
+    var newTree = apply(tree, operation.path, function (children, index) {
         if (index < 0 || index > children.length) {
             return false;
         }
         children.splice(index, 0, operation.element);
         return true;
     });
-    if (!newContent) {
+    if (!newTree) {
         return null;
     }
     return {
-        content: newContent,
+        tree: newTree,
         undo: {
             type: OperationType.Delete,
             path: __spreadArray([], operation.path, true)
         }
     };
 }
-function applyDelete(content, operation) {
+function applyDelete(tree, operation) {
     var deleted;
-    var newContent = apply(content, operation.path, function (children, index) {
+    var newTree = apply(tree, operation.path, function (children, index) {
         if (index < 0 || index >= children.length) {
             return false;
         }
         deleted = children.splice(index, 1)[0];
         return true;
     });
-    if (!newContent || !deleted) {
+    if (!newTree) {
         return null;
     }
     return {
-        content: newContent,
+        tree: newTree,
         undo: {
             type: OperationType.Insert,
             path: __spreadArray([], operation.path, true),
@@ -103,7 +104,7 @@ function applyDelete(content, operation) {
         }
     };
 }
-function applyMove(content, operation) {
+function applyMove(tree, operation) {
     var deleteOp = {
         type: OperationType.Delete,
         path: operation.from
@@ -112,7 +113,7 @@ function applyMove(content, operation) {
     if (!insertAt) {
         return null;
     }
-    var deleteRes = applyDelete(content, deleteOp);
+    var deleteRes = applyDelete(tree, deleteOp);
     if (!deleteRes) {
         return null;
     }
@@ -121,13 +122,13 @@ function applyMove(content, operation) {
         path: insertAt,
         element: deleteRes.undo.element
     };
-    var insertRes = applyInsert(deleteRes.content, insertOp);
+    var insertRes = applyInsert(deleteRes.tree, insertOp);
     if (!insertRes) {
         return null;
     }
     var undoTo = transformPathAfterInsert(operation.from, PathType.Anchor, insertAt);
     return {
-        content: insertRes.content,
+        tree: insertRes.tree,
         undo: {
             type: OperationType.Move,
             from: insertAt,
@@ -135,9 +136,9 @@ function applyMove(content, operation) {
         }
     };
 }
-function applySet(content, operation) {
+function applySet(tree, operation) {
     var replacedValue;
-    var newContent = apply(content, operation.path, function (parentChildren, index) {
+    var newTree = apply(tree, operation.path, function (parentChildren, index) {
         var _a;
         if (index < 0 || index >= parentChildren.length) {
             return false;
@@ -148,11 +149,11 @@ function applySet(content, operation) {
         parentChildren[index] = __assign(__assign({}, parentChildren[index]), (_a = {}, _a[operation.prop] = operation.value, _a));
         return true;
     });
-    if (!newContent) {
+    if (!newTree) {
         return null;
     }
     return {
-        content: newContent,
+        tree: newTree,
         undo: {
             type: OperationType.Set,
             path: __spreadArray([], operation.path, true),
@@ -184,6 +185,235 @@ function apply(tree, path, cb) {
     }
     return null;
 }
+function cleanRebase(ops, base) {
+    var rebased = rebase(ops, base);
+    var cleaned = [];
+    for (var _i = 0, rebased_1 = rebased; _i < rebased_1.length; _i++) {
+        var op = rebased_1[_i];
+        if (op) {
+            cleaned.push(op);
+        }
+    }
+    return cleaned;
+}
+exports.cleanRebase = cleanRebase;
+function rebase(ops, base) {
+    var transformed = new Array(ops.length).fill(null);
+    i: for (var i = 0; i < ops.length; i++) {
+        var op = ops[i];
+        for (var j = i - 1; j >= 0; j--) {
+            // Transform backward against prev operations in the transaction.
+            var prevOp = ops[j];
+            var newOp = transformBackward(op, prevOp);
+            if (newOp) {
+                op = newOp;
+                continue;
+            }
+            // It can't be transformed backward, let's map it.
+            var transformedPrevOp = transformed[j];
+            if (!transformedPrevOp) {
+                continue i;
+            }
+            var mapped = map(op, prevOp, transformedPrevOp);
+            if (!mapped) {
+                continue i;
+            }
+            // Transform forward against prev operations after the mapper.
+            for (var k = j + 1; k < ops.length; k++) {
+                var transformedPrevOp_1 = transformed[k];
+                if (!transformedPrevOp_1) {
+                    continue i;
+                }
+                var newOp_1 = transformForward(op, transformedPrevOp_1);
+                if (!newOp_1) {
+                    continue i;
+                }
+                op = newOp_1;
+            }
+            transformed[i] = op;
+            continue i;
+        }
+        // Transform forward against commited transactions.
+        for (var j = 0; j < base.length; j++) {
+            var newOp = transformForward(op, base[j]);
+            if (!newOp) {
+                continue i;
+            }
+            op = newOp;
+        }
+        // Transform forward against the final prev operations.
+        for (var j = 0; j < i; j++) {
+            var transformedPrevOp = transformed[j];
+            if (!transformedPrevOp) {
+                continue;
+            }
+            var newOp = transformForward(op, transformedPrevOp);
+            if (!newOp) {
+                continue i;
+            }
+            op = newOp;
+        }
+        transformed[i] = op;
+    }
+    return transformed;
+}
+exports.rebase = rebase;
+function transformForward(op, after) {
+    switch (op.type) {
+        case OperationType.Insert: {
+            var newPath = transformPathAfterOperation(op.path, PathType.Anchor, after);
+            if (!newPath) {
+                return null;
+            }
+            var newOp = {
+                type: OperationType.Insert,
+                path: newPath,
+                element: op.element
+            };
+            return newOp;
+        }
+        case OperationType.Delete: {
+            var newPath = transformPathAfterOperation(op.path, PathType.Exact, after);
+            if (!newPath) {
+                return null;
+            }
+            var newOp = {
+                type: OperationType.Delete,
+                path: newPath
+            };
+            return newOp;
+        }
+        case OperationType.Move: {
+            var newFrom = transformPathAfterOperation(op.from, PathType.Exact, after);
+            if (!newFrom) {
+                return null;
+            }
+            var newTo = transformPathAfterOperation(op.to, PathType.Anchor, after);
+            if (!newTo) {
+                return null;
+            }
+            var newOp = {
+                type: OperationType.Move,
+                from: newFrom,
+                to: newTo
+            };
+            return newOp;
+        }
+        case OperationType.Set: {
+            var newPath = transformPathAfterOperation(op.path, PathType.Exact, after);
+            if (!newPath) {
+                return null;
+            }
+            var newOp = {
+                type: OperationType.Set,
+                path: newPath,
+                prop: op.prop,
+                value: op.value
+            };
+            return newOp;
+        }
+    }
+}
+exports.transformForward = transformForward;
+function transformBackward(op, before) {
+    switch (op.type) {
+        case OperationType.Insert: {
+            var newPath = transformPathBeforeOperation(op.path, PathType.Anchor, before);
+            if (!newPath) {
+                return null;
+            }
+            var newOp = {
+                type: OperationType.Insert,
+                path: newPath,
+                element: op.element
+            };
+            return newOp;
+        }
+        case OperationType.Delete: {
+            var newPath = transformPathBeforeOperation(op.path, PathType.Exact, before);
+            if (!newPath) {
+                return null;
+            }
+            var newOp = {
+                type: OperationType.Delete,
+                path: newPath
+            };
+            return newOp;
+        }
+        case OperationType.Move: {
+            var newFrom = transformPathBeforeOperation(op.from, PathType.Exact, before);
+            if (!newFrom) {
+                return null;
+            }
+            var newTo = transformPathBeforeOperation(op.to, PathType.Anchor, before);
+            if (!newTo) {
+                return null;
+            }
+            var newOp = {
+                type: OperationType.Move,
+                from: newFrom,
+                to: newTo
+            };
+            return newOp;
+        }
+        case OperationType.Set: {
+            var newPath = transformPathBeforeOperation(op.path, PathType.Exact, before);
+            if (!newPath) {
+                return null;
+            }
+            var newOp = {
+                type: OperationType.Set,
+                path: newPath,
+                prop: op.prop,
+                value: op.value
+            };
+            return newOp;
+        }
+    }
+}
+exports.transformBackward = transformBackward;
+function map(op, before, after) {
+    switch (op.type) {
+        case OperationType.Insert: {
+            var newPath = mapPathByTransformedOperation(op.path, PathType.Anchor, before, after);
+            var newOp = {
+                type: OperationType.Insert,
+                path: newPath,
+                element: op.element
+            };
+            return newOp;
+        }
+        case OperationType.Delete: {
+            var newPath = mapPathByTransformedOperation(op.path, PathType.Exact, before, after);
+            var newOp = {
+                type: OperationType.Delete,
+                path: newPath
+            };
+            return newOp;
+        }
+        case OperationType.Move: {
+            var newFrom = mapPathByTransformedOperation(op.from, PathType.Exact, before, after);
+            var newTo = mapPathByTransformedOperation(op.to, PathType.Anchor, before, after);
+            var newOp = {
+                type: OperationType.Move,
+                from: newFrom,
+                to: newTo
+            };
+            return newOp;
+        }
+        case OperationType.Set: {
+            var newPath = mapPathByTransformedOperation(op.path, PathType.Exact, before, after);
+            var newOp = {
+                type: OperationType.Set,
+                path: newPath,
+                prop: op.prop,
+                value: op.value
+            };
+            return newOp;
+        }
+    }
+}
+exports.map = map;
 function transformPathAfterOperation(path, pathType, operation) {
     switch (operation.type) {
         case OperationType.Insert:
@@ -223,11 +453,15 @@ exports.transformPathBeforeOperation = transformPathBeforeOperation;
   *
   * If this function is given other cases, it throws error.
   */
-function mapPathByTransformedOperation(path, opBefore, opAfter) {
+function mapPathByTransformedOperation(path, pathType, opBefore, opAfter) {
     if (opBefore.type === OperationType.Insert
         && opAfter.type === OperationType.Insert
-        && arePathsEqual(path, opBefore.path)) {
-        return opAfter.path;
+        && isAnchestorOrEqual(path, opBefore.path)) {
+        var isEqual = path.length === opBefore.path.length;
+        if (isEqual && pathType === PathType.Anchor) {
+            throw new Error("Invalid path mapping");
+        }
+        return __spreadArray(__spreadArray([], opAfter.path, true), path.slice(opBefore.path.length), true);
     }
     throw new Error("Invalid path mapping");
 }
@@ -286,7 +520,7 @@ function transformPathAfterMove(path, pathType, from, to) {
     }
     var pathAfterDelete = transformPathAfterDelete(path, pathType, from);
     if (!pathAfterDelete) {
-        return __spreadArray(__spreadArray([], to, true), path.slice(from.length), true);
+        return __spreadArray(__spreadArray([], insertPathAfterDelete, true), path.slice(from.length), true);
     }
     return transformPathAfterInsert(pathAfterDelete, pathType, insertPathAfterDelete);
 }
@@ -326,15 +560,11 @@ function transformPathBeforeDelete(path, pathType, deleteAt) {
     return newPath;
 }
 function transformPathBeforeMove(path, pathType, from, to) {
-    var deletePathBeforeInsert = transformPathBeforeInsert(from, PathType.Anchor, to);
-    if (!deletePathBeforeInsert) {
-        return path;
-    }
-    var pathBeforeInsert = transformPathBeforeInsert(path, pathType, from);
+    var pathBeforeInsert = transformPathBeforeInsert(path, pathType, to);
     if (!pathBeforeInsert) {
         return from;
     }
-    return transformPathBeforeDelete(pathBeforeInsert, pathType, deletePathBeforeInsert);
+    return transformPathBeforeDelete(pathBeforeInsert, pathType, from);
 }
 /**
  * Check if `path`'s parent is an anchestor of `other`.
@@ -350,8 +580,8 @@ function isParentAnchestorOfOther(path, other) {
     }
     return true;
 }
-function arePathsEqual(path, other) {
-    if (path.length !== other.length) {
+function isAnchestorOrEqual(path, other) {
+    if (path.length >= other.length) {
         return false;
     }
     for (var i = 0; i < path.length; i++) {

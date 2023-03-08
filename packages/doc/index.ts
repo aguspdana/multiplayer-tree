@@ -2,7 +2,7 @@ export interface Doc {
   id: string,
   type: DocType,
   title: string,
-  content: Element[],
+  children: Element[],
 }
 
 export enum DocType {
@@ -11,19 +11,32 @@ export enum DocType {
 }
 
 export type Element =
-  LayoutElement
+  ComponentRefElement
+  | LayoutElement
   | TextElement
   | InputElement
   | ButtonElement;
 
 export enum ElementType {
+  ComponentRef = "component_ref",
   Layout = "layout",
   Text = "text",
   Input = "input",
   Button = "button",
 }
 
-interface LayoutElement {
+interface ElementBase {
+  id: string,
+  type: ElementType,
+  name: string,
+}
+
+export interface ComponentRefElement extends ElementBase {
+  type: ElementType.ComponentRef,
+  docId: string,
+}
+
+export interface LayoutElement extends ElementBase {
   type: ElementType.Layout,
   direction: LayoutDirection,
   children: Element[]
@@ -34,24 +47,22 @@ export enum LayoutDirection {
   Column = "column",
 }
 
-export interface TextElement {
+export interface TextElement extends ElementBase {
   type: ElementType.Text,
   text: string,
   fontSize: number,
 }
 
-export interface InputElement {
+export interface InputElement extends ElementBase {
   type: ElementType.Input,
   placeholder: string,
   size: number,
 }
 
-export interface ButtonElement {
+export interface ButtonElement extends ElementBase {
   type: ElementType.Button,
   text: string
 }
-
-export type Transaction = Operation[];
 
 export type Operation =
   InsertOperation
@@ -98,27 +109,27 @@ export enum PathType {
 }
 
 export function applyOperation(
-  content: Element[],
+  tree: Element[],
   operation: Operation
-): { content: Element[], undo: Operation } | null {
+): { tree: Element[], undo: Operation } | null {
   switch (operation.type) {
     case OperationType.Insert:
-      return applyInsert(content, operation);
+      return applyInsert(tree, operation);
     case OperationType.Delete:
-      return applyDelete(content, operation);
+      return applyDelete(tree, operation);
     case OperationType.Move:
-      return applyMove(content, operation);
+      return applyMove(tree, operation);
     case OperationType.Set:
-      return applySet(content, operation);
+      return applySet(tree, operation);
   }
 }
 
 function applyInsert(
-  content: Element[],
+  tree: Element[],
   operation: InsertOperation
-): { content: Element[], undo: DeleteOperation } | null {
-  const newContent = apply(
-    content,
+): { tree: Element[], undo: DeleteOperation } | null {
+  const newTree = apply(
+    tree,
     operation.path,
     (children, index) => {
       if (index < 0 || index > children.length) {
@@ -129,12 +140,12 @@ function applyInsert(
     }
   );
 
-  if (!newContent) {
+  if (!newTree) {
     return null;
   }
 
   return {
-    content: newContent,
+    tree: newTree,
     undo: {
       type: OperationType.Delete,
       path: [...operation.path]
@@ -143,13 +154,13 @@ function applyInsert(
 }
 
 function applyDelete(
-  content: Element[],
+  tree: Element[],
   operation: DeleteOperation
-): { content: Element[], undo: InsertOperation } | null {
+): { tree: Element[], undo: InsertOperation } | null {
   let deleted: Element | undefined;
 
-  const newContent = apply(
-    content,
+  const newTree = apply(
+    tree,
     operation.path,
     (children, index) => {
       if (index < 0 || index >= children.length) {
@@ -160,12 +171,12 @@ function applyDelete(
     }
   );
 
-  if (!newContent || !deleted) {
+  if (!newTree) {
     return null;
   }
 
   return {
-    content: newContent,
+    tree: newTree,
     undo: {
       type: OperationType.Insert,
       path: [...operation.path],
@@ -175,9 +186,9 @@ function applyDelete(
 }
 
 function applyMove(
-  content: Element[],
+  tree: Element[],
   operation: MoveOperation
-): { content: Element[], undo: MoveOperation } | null {
+): { tree: Element[], undo: MoveOperation } | null {
   const deleteOp: DeleteOperation = {
     type: OperationType.Delete,
     path: operation.from
@@ -193,7 +204,7 @@ function applyMove(
     return null;
   }
 
-  const deleteRes = applyDelete(content, deleteOp);
+  const deleteRes = applyDelete(tree, deleteOp);
   if (!deleteRes) {
     return null;
   }
@@ -202,7 +213,7 @@ function applyMove(
     path: insertAt,
     element: deleteRes.undo.element
   };
-  const insertRes = applyInsert(deleteRes.content, insertOp);
+  const insertRes = applyInsert(deleteRes.tree, insertOp);
 
   if (!insertRes) {
     return null;
@@ -215,7 +226,7 @@ function applyMove(
   );
 
   return {
-    content: insertRes.content,
+    tree: insertRes.tree,
     undo: {
       type: OperationType.Move,
       from: insertAt,
@@ -225,13 +236,13 @@ function applyMove(
 }
 
 function applySet(
-  content: Element[],
+  tree: Element[],
   operation: SetOperation
-): { content: Element[], undo: SetOperation } | null {
+): { tree: Element[], undo: SetOperation } | null {
   let replacedValue: any;
 
-  const newContent = apply(
-    content,
+  const newTree = apply(
+    tree,
     operation.path,
     (parentChildren, index) => {
       if (index < 0 || index >= parentChildren.length) {
@@ -248,12 +259,12 @@ function applySet(
     }
   );
 
-  if (!newContent) {
+  if (!newTree) {
     return null;
   }
 
   return {
-    content: newContent,
+    tree: newTree,
     undo: {
       type: OperationType.Set,
       path: [...operation.path],
@@ -293,6 +304,259 @@ function apply(
   }
 
   return null;
+}
+
+export function cleanRebase(ops: Operation[], base: Operation[]): Operation[] {
+  const rebased = rebase(ops, base);
+  const cleaned: Operation[] = [];
+
+  for (const op of rebased) {
+    if (op) {
+      cleaned.push(op);
+    }
+  }
+
+  return cleaned;
+}
+
+export function rebase(ops: Operation[], base: Operation[]): (Operation | null)[] {
+  const transformed: (Operation | null)[] = new Array(ops.length).fill(null);
+
+  i: for (let i = 0; i < ops.length; i++) {
+    let op = ops[i];
+
+    for (let j = i - 1; j >= 0; j--) {
+      // Transform backward against prev operations in the transaction.
+      const prevOp = ops[j];
+      const newOp = transformBackward(op, prevOp);
+
+      if (newOp) {
+        op = newOp;
+        continue;
+      }
+
+      // It can't be transformed backward, let's map it.
+      const transformedPrevOp = transformed[j];
+
+      if (!transformedPrevOp) {
+        continue i;
+      }
+
+      const mapped = map(op, prevOp, transformedPrevOp);
+
+      if (!mapped) {
+        continue i;
+      }
+
+      // Transform forward against prev operations after the mapper.
+      for (let k = j + 1; k < ops.length; k++) {
+        const transformedPrevOp = transformed[k];
+        if (!transformedPrevOp) {
+          continue i;
+        }
+        const newOp = transformForward(op, transformedPrevOp);
+        if (!newOp) {
+          continue i;
+        }
+        op = newOp;
+      }
+
+      transformed[i] = op;
+
+      continue i;
+    }
+
+    // Transform forward against commited transactions.
+    for (let j = 0; j < base.length; j++) {
+      const newOp = transformForward(op, base[j]);
+      if (!newOp) {
+        continue i;
+      }
+      op = newOp;
+    }
+
+    // Transform forward against the final prev operations.
+    for (let j = 0; j < i; j++) {
+      const transformedPrevOp = transformed[j];
+      if (!transformedPrevOp) {
+        continue;
+      }
+      const newOp = transformForward(op, transformedPrevOp);
+      if (!newOp) {
+        continue i;
+      }
+      op = newOp;
+    }
+
+    transformed[i] = op;
+  }
+
+  return transformed;
+}
+
+export function transformForward(op: Operation, after: Operation): Operation | null {
+  switch (op.type) {
+    case OperationType.Insert: {
+      const newPath = transformPathAfterOperation(op.path, PathType.Anchor, after);
+      if (!newPath) {
+        return null;
+      }
+      const newOp: InsertOperation = {
+        type: OperationType.Insert,
+        path: newPath,
+        element: op.element,
+      };
+      return newOp;
+    }
+
+    case OperationType.Delete: {
+      const newPath = transformPathAfterOperation(op.path, PathType.Exact, after);
+      if (!newPath) {
+        return null;
+      }
+      const newOp: DeleteOperation = {
+        type: OperationType.Delete,
+        path: newPath,
+      };
+      return newOp;
+    }
+
+    case OperationType.Move: {
+      const newFrom = transformPathAfterOperation(op.from, PathType.Exact, after);
+      if (!newFrom) {
+        return null;
+      }
+      const newTo = transformPathAfterOperation(op.to, PathType.Anchor, after);
+      if (!newTo) {
+        return null;
+      }
+      const newOp: MoveOperation = {
+        type: OperationType.Move,
+        from: newFrom,
+        to: newTo,
+      };
+      return newOp;
+    }
+
+    case OperationType.Set: {
+      const newPath = transformPathAfterOperation(op.path, PathType.Exact, after);
+      if (!newPath) {
+        return null;
+      }
+      const newOp: SetOperation = {
+        type: OperationType.Set,
+        path: newPath,
+        prop: op.prop,
+        value: op.value,
+      };
+      return newOp;
+    }
+  }
+}
+
+export function transformBackward(op: Operation, before: Operation): Operation | null {
+  switch (op.type) {
+    case OperationType.Insert: {
+      const newPath = transformPathBeforeOperation(op.path, PathType.Anchor, before);
+      if (!newPath) {
+        return null;
+      }
+      const newOp: InsertOperation = {
+        type: OperationType.Insert,
+        path: newPath,
+        element: op.element,
+      };
+      return newOp;
+    }
+
+    case OperationType.Delete: {
+      const newPath = transformPathBeforeOperation(op.path, PathType.Exact, before);
+      if (!newPath) {
+        return null;
+      }
+      const newOp: DeleteOperation = {
+        type: OperationType.Delete,
+        path: newPath,
+      };
+      return newOp;
+    }
+
+    case OperationType.Move: {
+      const newFrom = transformPathBeforeOperation(op.from, PathType.Exact, before);
+      if (!newFrom) {
+        return null;
+      }
+      const newTo = transformPathBeforeOperation(op.to, PathType.Anchor, before);
+      if (!newTo) {
+        return null;
+      }
+      const newOp: MoveOperation = {
+        type: OperationType.Move,
+        from: newFrom,
+        to: newTo,
+      };
+      return newOp;
+    }
+
+    case OperationType.Set: {
+      const newPath = transformPathBeforeOperation(op.path, PathType.Exact, before);
+      if (!newPath) {
+        return null;
+      }
+      const newOp: SetOperation = {
+        type: OperationType.Set,
+        path: newPath,
+        prop: op.prop,
+        value: op.value,
+      };
+      return newOp;
+    }
+  }
+}
+
+export function map(op: Operation, before: Operation, after: Operation): Operation {
+  switch (op.type) {
+    case OperationType.Insert: {
+      const newPath = mapPathByTransformedOperation(op.path, PathType.Anchor, before, after);
+      const newOp: InsertOperation = {
+        type: OperationType.Insert,
+        path: newPath,
+        element: op.element,
+      };
+      return newOp;
+    }
+
+    case OperationType.Delete: {
+      const newPath = mapPathByTransformedOperation(op.path, PathType.Exact, before, after);
+      const newOp: DeleteOperation = {
+        type: OperationType.Delete,
+        path: newPath,
+      };
+      return newOp;
+    }
+
+    case OperationType.Move: {
+      const newFrom = mapPathByTransformedOperation(op.from, PathType.Exact, before, after);
+      const newTo = mapPathByTransformedOperation(op.to, PathType.Anchor, before, after);
+      const newOp: MoveOperation = {
+        type: OperationType.Move,
+        from: newFrom,
+        to: newTo,
+      };
+      return newOp;
+    }
+
+    case OperationType.Set: {
+      const newPath = mapPathByTransformedOperation(op.path, PathType.Exact, before, after);
+      const newOp: SetOperation = {
+        type: OperationType.Set,
+        path: newPath,
+        prop: op.prop,
+        value: op.value,
+      };
+      return newOp;
+    }
+  }
 }
 
 export function transformPathAfterOperation(
@@ -344,15 +608,20 @@ export function transformPathBeforeOperation(
   */
 export function mapPathByTransformedOperation(
   path: Path,
+  pathType: PathType,
   opBefore: Operation,
   opAfter: Operation
 ): Path {
   if (
     opBefore.type === OperationType.Insert
     && opAfter.type === OperationType.Insert
-    && arePathsEqual(path, opBefore.path)
+    && isAnchestorOrEqual(path, opBefore.path)
   ) {
-    return opAfter.path;
+    const isEqual = path.length === opBefore.path.length;
+    if (isEqual && pathType === PathType.Anchor) {
+      throw new Error("Invalid path mapping")
+    }
+    return [...opAfter.path, ...path.slice(opBefore.path.length)];
   }
 
   throw new Error("Invalid path mapping")
@@ -436,7 +705,7 @@ function transformPathAfterMove(
   const pathAfterDelete = transformPathAfterDelete(path, pathType, from);
 
   if (!pathAfterDelete) {
-    return [...to, ...path.slice(from.length)];
+    return [...insertPathAfterDelete, ...path.slice(from.length)];
   }
 
   return transformPathAfterInsert(pathAfterDelete, pathType, insertPathAfterDelete);
@@ -500,19 +769,11 @@ function transformPathBeforeMove(
   from: Path,
   to: Path,
 ): Path {
-  const deletePathBeforeInsert = transformPathBeforeInsert(from, PathType.Anchor, to);
-
-  if (!deletePathBeforeInsert) {
-    return path;
-  }
-
-  const pathBeforeInsert = transformPathBeforeInsert(path, pathType, from);
-
+  const pathBeforeInsert = transformPathBeforeInsert(path, pathType, to);
   if (!pathBeforeInsert) {
     return from;
   }
-
-  return transformPathBeforeDelete(pathBeforeInsert, pathType, deletePathBeforeInsert);
+  return transformPathBeforeDelete(pathBeforeInsert, pathType, from);
 }
 
 /**
@@ -532,8 +793,8 @@ function isParentAnchestorOfOther(path: Path, other: Path) {
   return true;
 }
 
-function arePathsEqual(path: Path, other: Path): boolean {
-  if (path.length !== other.length) {
+function isAnchestorOrEqual(path: Path, other: Path): boolean {
+  if (path.length >= other.length) {
     return false;
   }
 

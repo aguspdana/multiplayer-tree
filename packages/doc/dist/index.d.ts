@@ -2,20 +2,30 @@ export interface Doc {
     id: string;
     type: DocType;
     title: string;
-    content: Element[];
+    children: Element[];
 }
 export declare enum DocType {
     Page = "page",
     Component = "component"
 }
-export type Element = LayoutElement | TextElement | InputElement | ButtonElement;
+export type Element = ComponentRefElement | LayoutElement | TextElement | InputElement | ButtonElement;
 export declare enum ElementType {
+    ComponentRef = "component_ref",
     Layout = "layout",
     Text = "text",
     Input = "input",
     Button = "button"
 }
-interface LayoutElement {
+interface ElementBase {
+    id: string;
+    type: ElementType;
+    name: string;
+}
+export interface ComponentRefElement extends ElementBase {
+    type: ElementType.ComponentRef;
+    docId: string;
+}
+export interface LayoutElement extends ElementBase {
     type: ElementType.Layout;
     direction: LayoutDirection;
     children: Element[];
@@ -24,21 +34,20 @@ export declare enum LayoutDirection {
     Row = "row",
     Column = "column"
 }
-export interface TextElement {
+export interface TextElement extends ElementBase {
     type: ElementType.Text;
     text: string;
     fontSize: number;
 }
-export interface InputElement {
+export interface InputElement extends ElementBase {
     type: ElementType.Input;
     placeholder: string;
     size: number;
 }
-export interface ButtonElement {
+export interface ButtonElement extends ElementBase {
     type: ElementType.Button;
     text: string;
 }
-export type Transaction = Operation[];
 export type Operation = InsertOperation | DeleteOperation | MoveOperation | SetOperation;
 export declare enum OperationType {
     Insert = "insert",
@@ -71,10 +80,15 @@ export declare enum PathType {
     Exact = 0,
     Anchor = 1
 }
-export declare function applyOperation(content: Element[], operation: Operation): {
-    content: Element[];
+export declare function applyOperation(tree: Element[], operation: Operation): {
+    tree: Element[];
     undo: Operation;
 } | null;
+export declare function cleanRebase(ops: Operation[], base: Operation[]): Operation[];
+export declare function rebase(ops: Operation[], base: Operation[]): (Operation | null)[];
+export declare function transformForward(op: Operation, after: Operation): Operation | null;
+export declare function transformBackward(op: Operation, before: Operation): Operation | null;
+export declare function map(op: Operation, before: Operation, after: Operation): Operation;
 export declare function transformPathAfterOperation(path: Path, pathType: PathType, operation: Operation): Path | null;
 export declare function transformPathBeforeOperation(path: Path, pathType: PathType, operation: Operation): Path | null;
 /**
@@ -90,5 +104,5 @@ export declare function transformPathBeforeOperation(path: Path, pathType: PathT
   *
   * If this function is given other cases, it throws error.
   */
-export declare function mapPathByTransformedOperation(path: Path, opBefore: Operation, opAfter: Operation): Path;
+export declare function mapPathByTransformedOperation(path: Path, pathType: PathType, opBefore: Operation, opAfter: Operation): Path;
 export {};
