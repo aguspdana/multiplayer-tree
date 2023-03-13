@@ -31,12 +31,13 @@ The tree component behaves similar to Figma layers tree with some differences.
 - It can move multiple nodes
 - Highlight the parent node of the drop position when moving the node.
 
-Figma determines the drop position based on the mouse position.  This allows it
-to move a node to the parent level (as sibling) when dragged slightly to
-the left.  I can't recreate this without causing expensive browser reflows
-because the specification of this exercise is to support custom component for
-the node, which can have different dimensions.  As a workaround, we can move
-a node as the parent sibling when the mouse is hovered over the parent
+Figma determines the drop path based on the mouse position on mouse down
+and mouse up.  It's trivial to calculate it because the node component has the
+same height.  This allows it to move a node to the parent level (as sibling)
+when dragged slightly to the left.  I can't recreate this without causing
+expensive browser reflows because this exercise requires support for custom
+component for the node, which can have different dimensions.  As a workaround,
+we can move a node as the parent sibling when the mouse is hovered over the parent
 component, outside the child component.
 
 ## Page/component renference
@@ -111,6 +112,9 @@ updated in a single transaction.
 
 # TODO
 
-This demo requires a perfect connection.  It doesn't handle message dropped
-because of bad connection, which can cause inconsistent document across
-different clients.
+This demo requires a perfect connection.  It doesn't handle message drop
+caused by broken connection, which can cause inconsistent document across
+different clients.  We can solve this by:
+- Attaching message counter to the messages
+- Resending unconfirmed messages upon reconnection
+- Ignoring messages with counter less than the counter in the last message.
