@@ -1,9 +1,11 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.Client = exports.ClientsMap = void 0;
-const MAX_IDLE = 60000;
-const HEARBEAT_INTERVAL = 10000;
+const MAX_IDLE = 60_000;
+const HEARBEAT_INTERVAL = 10_000;
 class ClientsMap {
+    clients;
+    _onDelete;
     constructor(onDelete) {
         this.clients = {};
         this._onDelete = onDelete;
@@ -28,6 +30,11 @@ class ClientsMap {
 }
 exports.ClientsMap = ClientsMap;
 class Client {
+    _id;
+    _msgCount;
+    _socketIds;
+    _heartbeat;
+    _onMaxIdle;
     constructor(id, onMaxIdle) {
         this._id = id;
         this._onMaxIdle = onMaxIdle;

@@ -3,6 +3,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.ServerDoc = exports.DocsMap = void 0;
 const doc_1 = require("doc");
 class DocsMap {
+    docs;
     constructor() {
         this.docs = {};
     }
@@ -25,6 +26,12 @@ class DocsMap {
 }
 exports.DocsMap = DocsMap;
 class ServerDoc {
+    _id;
+    _type;
+    _title;
+    _children;
+    _version;
+    _operations;
     constructor(doc) {
         this._id = doc.id;
         this._type = doc.type;

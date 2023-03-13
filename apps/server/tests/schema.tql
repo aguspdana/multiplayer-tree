@@ -1,0 +1,77 @@
+define
+
+id sub attribute, value string;
+title sub attribute, value string;
+
+Doc-Child sub relation,
+    owns id @key,
+    relates doc,
+    relates child;
+
+Parent-Child sub relation,
+    owns id @key,
+    relates parent,
+    relates child;
+
+Element-PageRef sub relation,
+    owns id @key,
+    relates element,
+    relates page;
+
+Element-ComponentRef sub relation,
+    owns id @key,
+    relates element,
+    relates component;
+
+Doc sub entity,
+    abstract,
+    owns id @key,
+    owns title,
+    plays Doc-Child:doc,
+    plays Parent-Child:parent;
+
+PageDoc sub Doc,
+    plays Element-PageRef:page;
+
+ComponentDoc sub Doc,
+    plays Element-ComponentRef:component;
+
+Child sub entity,
+    owns id @key,
+    abstract,
+    plays Doc-Child:child,
+    plays Parent-Child:child;
+
+Parent sub Child,
+    abstract,
+    plays Parent-Child:parent;
+
+LayoutElement·direction sub attribute, value string, regex "^(column|row)$";
+LayoutElement sub Parent,
+    owns LayoutElement·direction;
+
+TextElement·text sub attribute, value string;
+TextElement sub Child,
+    owns TextElement·text;
+
+InputElement·name sub attribute, value string;
+InputElement sub Child,
+    owns InputElement·name;
+
+ButtonElement·text sub attribute, value string;
+ButtonElement sub Child,
+    owns ButtonElement·text;
+
+PageRefElement sub Child,
+    plays Element-PageRef:page;
+
+ComponentRefElement sub Child,
+    plays Element-ComponentRef:element;
+
+rule decendants:
+    when {
+        (parent: $p, child: $c) isa Parent-Child;
+        (parent: $c, child: $gc) isa Parent-Child;
+    } then {
+        (parent: $p, child: $gc) isa Parent-Child;
+    };

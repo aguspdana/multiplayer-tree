@@ -1,0 +1,44 @@
+insert
+
+## Component doc
+
+$comp-1 isa ComponentDoc, has id "comp-1", has title "Login form";
+
+$layout-1 isa LayoutElement, has id "layout-1", has LayoutElement·direction "row";
+
+$input-1 isa InputElement, has id "input-1", has InputElement·name "email";
+$input-2 isa InputElement, has id "input-2", has InputElement·name "password";
+
+$button-1 isa ButtonElement, has id "button-1", has ButtonElement·text "Login";
+
+$doc-child-1 (doc: $comp-1, child: $layout-1) isa Doc-Child, has id "doc-child-1";
+
+$parent-child-1 (parent: $layout-1, child: $input-1) isa Parent-Child, has id "parent-child-1";
+$parent-child-2 (parent: $layout-1, child: $input-2) isa Parent-Child, has id "parent-child28";
+$parent-child-3 (parent: $layout-1, child: $button-1) isa Parent-Child, has id "parent-child-3";
+
+## Page doc
+
+$page-1 isa PageDoc, has id "page-1", has title "Hello";
+
+$layout-2 isa LayoutElement, has id "layout-2", has LayoutElement·direction "row";
+$layout-3 isa LayoutElement, has id "layout-3", has LayoutElement·direction "row";
+$layout-4 isa LayoutElement, has id "layout-4", has LayoutElement·direction "row";
+
+$text-1 isa TextElement, has id "text-1", has TextElement·text "Hello World";
+$text-2 isa TextElement, has id "text-2", has TextElement·text "Hello TypeDB";
+$text-3 isa TextElement, has id "text-3", has TextElement·text "Hello Sub text";
+$text-4 isa TextElement, has id "text-4", has TextElement·text "Hello Sub sub text";
+
+$comp-ref-1 isa ComponentRefElement, has id "comp-ref-1";
+
+$doc-child-2 (doc: $page-1, child: $layout-2) isa Doc-Child, has id "doc-child-2";
+
+$parent-child-4 (parent: $layout-2, child: $text-1) isa Parent-Child, has id "parent-child-4";
+$parent-child-5 (parent: $layout-2, child: $text-2) isa Parent-Child, has id "parent-child-5";
+$parent-child-6 (parent: $layout-2, child: $layout-3) isa Parent-Child, has id "parent-child-6";
+$parent-child-7 (parent: $layout-3, child: $text-3) isa Parent-Child, has id "parent-child-7";
+$parent-child-8 (parent: $layout-3, child: $layout-4) isa Parent-Child, has id "parent-child-8";
+$parent-child-9 (parent: $layout-4, child: $text-4) isa Parent-Child, has id "parent-child-9";
+
+$elm-compref-1 (element: $comp-ref-1, component: $comp-1) isa Element-ComponentRef, has id "elm-compref-1";

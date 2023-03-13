@@ -42,7 +42,6 @@ export interface TextElement extends ElementBase {
 export interface InputElement extends ElementBase {
     type: ElementType.Input;
     placeholder: string;
-    size: number;
 }
 export interface ButtonElement extends ElementBase {
     type: ElementType.Button;

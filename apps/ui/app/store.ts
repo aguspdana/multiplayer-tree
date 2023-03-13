@@ -6,6 +6,7 @@ import {
   DeleteOperation,
   Doc,
   Element,
+  ElementType,
   InsertOperation,
   MoveOperation,
   Operation,
@@ -45,6 +46,8 @@ interface State {
   insertElement: (at: Path, element: Element) => void,
   deleteElement: (at: Path) => void,
   moveElement: (from: Path, to: Path) => void,
+  moveUp: (at: Path) => void,
+  moveDown: (at: Path) => void,
   moveSelected: (to: Path) => void,
   deleteSelected: () => void,
 }
@@ -93,6 +96,13 @@ export const useStore = create<State>((set, get): State => {
   });
 
   socket.on("subscribed", ({ doc, version }) => {
+    const subscribed = new Set(Object.keys(get().docs));
+    getRef(doc).forEach(id => {
+      if (!subscribed.has(id)) {
+        socket.emit("subscribe", { id });
+      }
+    });
+
     set(state => ({
       ...state,
       docs: {
@@ -152,7 +162,7 @@ export const useStore = create<State>((set, get): State => {
     });
   });
 
-  socket.on("apply", ({ id, version: _, operations }) => {
+  socket.on("apply", ({ id, version, operations }) => {
     set(state => {
       if (!state.docs[id]) {
         return state;
@@ -188,6 +198,7 @@ export const useStore = create<State>((set, get): State => {
       ]
       const rebasedUndo = rebaseTransactions(doc.undo, undoRedoBase);
       const rebasedRedo = rebaseTransactions(doc.redo, undoRedoBase);
+      doc.selection = transformSelection(doc.selection, undoRedoBase);
 
       const undoUncommitedOps: Operation[] = [];
       forEachReverse(doc.undoPendingOperations, (op) => {
@@ -218,6 +229,7 @@ export const useStore = create<State>((set, get): State => {
               ...doc.doc,
               children,
             },
+            version,
             undo: rebasedUndo,
             redo: rebasedRedo,
             sentOperations: rebasedSentOperations,
@@ -257,7 +269,7 @@ export const useStore = create<State>((set, get): State => {
         return state;
       }
 
-      // const rebasedUndo = rebaseTransactions(doc.undo, sequenceOps);
+      const rebasedUndo = rebaseTransactions(doc.undo, sequenceOps);
 
       const { children, undo } = applyOperationsOnContent(doc.doc.children, sequenceOps);
 
@@ -265,8 +277,7 @@ export const useStore = create<State>((set, get): State => {
         ...doc.doc,
         children,
       };
-      // doc.undo = [...rebasedUndo, undo];
-      doc.undo = [...doc.undo, undo];
+      doc.undo = [...rebasedUndo, undo];
       doc.redo = [];
       doc.selection = transformSelection(doc.selection, sequenceOps);
 
@@ -335,8 +346,7 @@ export const useStore = create<State>((set, get): State => {
           ...doc.doc,
           children,
         };
-        // doc.undo = rebaseTransactions(doc.undo.slice(0, -1), ops);
-        doc.undo = doc.undo.slice(0, -1);
+        doc.undo = rebaseTransactions(doc.undo.slice(0, -1), ops);
         doc.redo = [...doc.redo, undo];
         doc.selection = transformSelection(doc.selection, ops);
 
@@ -385,17 +395,15 @@ export const useStore = create<State>((set, get): State => {
         const ops = doc.redo[doc.redo.length - 1];
 
         const { children, undo } = applyOperationsOnContent(doc.doc.children, ops);
-        // const rebasedUndo = rebaseTransactions(doc.undo, ops);
-        // const rebasedRedo = rebaseTransactions(doc.redo.slice(0, -1), ops);
+        const rebasedUndo = rebaseTransactions(doc.undo, ops);
+        const rebasedRedo = rebaseTransactions(doc.redo.slice(0, -1), ops);
 
         doc.doc = {
           ...doc.doc,
           children,
         };
-        // doc.undo = [...rebasedUndo, undo];
-        doc.undo = [...doc.undo, undo];
-        // doc.redo = rebasedRedo;
-        doc.redo = doc.redo.slice(0, -1);
+        doc.undo = [...rebasedUndo, undo];
+        doc.redo = rebasedRedo;
         doc.selection = transformSelection(doc.selection, ops);
 
         // Send or buffer operations.
@@ -517,6 +525,31 @@ export const useStore = create<State>((set, get): State => {
       }
       applyOperations(ops);
     },
+
+    moveUp: function (at) {
+      if (at[at.length - 1] === 0) {
+        return;
+      }
+      const to = [...at];
+      to[to.length - 1] -= 1;
+      const op: MoveOperation = {
+        type: OperationType.Move,
+        from: at,
+        to,
+      };
+      applyOperations([op]);
+    },
+
+    moveDown: function (at) {
+      const to = [...at];
+      to[to.length - 1] += 2;
+      const op: MoveOperation = {
+        type: OperationType.Move,
+        from: at,
+        to,
+      };
+      applyOperations([op]);
+    },
   };
 });
 
@@ -569,4 +602,27 @@ function forEachReverse<T>(array: T[], cb: (item: T, index: number) => void) {
   for (let i = array.length - 1; i >= 0; i--) {
     cb(array[i], i);
   }
+}
+
+function flatten(elements: Element[]): Element[] {
+  const flat: Element[] = [];
+  for (const c of elements) {
+    flat.push(c);
+    if (c.type === ElementType.Layout) {
+      flatten(c.children).forEach(gc => {
+        flat.push(gc);
+      });
+    }
+  }
+  return flat;
+}
+
+function getRef(doc: Doc): Set<string> {
+  const ids: Set<string> = new Set();
+  flatten(doc.children).forEach(e => {
+    if (e.type === ElementType.ComponentRef) {
+      ids.add(e.docId);
+    }
+  });
+  return ids;
 }

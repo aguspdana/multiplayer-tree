@@ -124,13 +124,6 @@ function TreeNode<T extends MinimalTreeNode<T>>({
     }
   }
 
-  function clickOnContainer(e: React.MouseEvent) {
-    e.stopPropagation();
-    if (!e.shiftKey && !e.ctrlKey) {
-      select(path);
-    }
-  }
-
   function mouseEnterMoveOnContainer(e: React.MouseEvent<HTMLDivElement>) {
     if (isDragged && containerRef.current) {
       e.stopPropagation();
@@ -213,7 +206,6 @@ function TreeNode<T extends MinimalTreeNode<T>>({
     <div
       ref={containerRef}
       className={cotainerClass}
-      onClick={clickOnContainer}
       onMouseDown={mouseDownOnContainer}
       onMouseEnter={mouseEnterMoveOnContainer}
       onMouseMove={mouseEnterMoveOnContainer}
@@ -569,14 +561,12 @@ export function RootTree<T extends MinimalTreeNode<T>>({
   function _fold(path: TreePath) {
     if (typeof fold === "function") {
       fold(path);
-    } else if (typeof setTree === "function") {
     }
   }
 
   function _unfold(path: TreePath) {
     if (typeof unfold === "function") {
       unfold(path);
-    } else if (typeof setTree === "function") {
     }
   }
 
